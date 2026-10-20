@@ -18,7 +18,7 @@
   "author": "Shards Labs",
   "license": "MIT",
   "dependencies": {
-    "@google/genai": "^1.33.0",
+    "@google/genai": "^2.13.0",
     "lucide-react": "^1.7.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"
