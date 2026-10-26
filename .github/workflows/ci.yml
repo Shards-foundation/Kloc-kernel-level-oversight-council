@@ -15,11 +15,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 20
-          cache: "npm"
       - name: Install dependencies
         run: npm install
       - name: Type check
         run: npm run build -- --noEmit || npx tsc --noEmit || echo "No type check script"
       - name: Build
         run: npm run build || echo "No build script"
-
