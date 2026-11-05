@@ -1,47 +1,24 @@
-import { GoogleGenAI } from "@google/genai";
-import { KLOC_SYSTEM_PROMPT } from "../constants";
-import { KlocResponse, ProposalData } from "../types";
+import type { KlocResponse, ProposalData } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Never send provider credentials to the browser. The same-origin server owns inference.
+export async function runKlocAnalysis(proposal: ProposalData): Promise<KlocResponse> {
+  const response = await fetch('/api/analyze', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(proposal)
+  });
 
-export const runKlocAnalysis = async (proposal: ProposalData): Promise<KlocResponse> => {
-  
-  const proposalPacket = `
-PROPOSAL_PACKET
-proposal_id: "${proposal.proposal_id}"
-title: "${proposal.title}"
-context: "${proposal.context}"
-scope: "${proposal.scope}"
-assets_at_risk: "${proposal.assets_at_risk}"
-execution_boundary: "${proposal.execution_boundary}"
-tools_and_integrations: "${proposal.tools_and_integrations}"
-data_sources: "${proposal.data_sources}"
-success_criteria: "${proposal.success_criteria}"
-constraints: "${proposal.constraints}"
-unknowns_you_already_know: "${proposal.unknowns_you_already_know}"
-`;
+  let payload: any;
+  try { payload = await response.json(); }
+  catch { throw new Error('KLOC server returned an invalid response'); }
 
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: proposalPacket,
-      config: {
-        systemInstruction: KLOC_SYSTEM_PROMPT,
-        responseMimeType: "application/json",
-        temperature: 0.1, // Low temperature for deterministic/analytical output
-      },
-    });
-
-    const text = response.text;
-    if (!text) {
-      throw new Error("No response from Gemini");
-    }
-
-    // Parse strictly as JSON
-    const data = JSON.parse(text) as KlocResponse;
-    return data;
-  } catch (error) {
-    console.error("KLOC Analysis Error:", error);
-    throw error;
+  if (!response.ok) {
+    throw new Error(
+      typeof payload?.error === 'string' ? payload.error : 'KLOC analysis failed'
+    );
   }
-};
+  if (!payload || !Array.isArray(payload.seats) || !payload.kernel_resolution) {
+    throw new Error('KLOC server response was incomplete');
+  }
+  return payload as KlocResponse;
+}
