@@ -96,20 +96,20 @@ test('calls five separate APIs and no provider sees other provider reviews', asy
 test('missing one upstream vote fails the full council; no Gemini substitution', async () => {
   const provider = mocked({ failProvider: 'xai' });
   await assert.rejects(runIndependentCouncil(proposal, { env, fetchFn: provider.fetchFn }),
-    /Council incomplete.*FOUNDER_ADVERSARY/);
+    /[Ii]ndependent council incomplete.*FOUNDER_ADVERSARY/);
   assert.equal(provider.calls.length, 5);
 });
 
 test('a model cannot impersonate a different seat', async () => {
   const provider = mocked({ spoofProvider: 'mistral' });
   await assert.rejects(runIndependentCouncil(proposal, { env, fetchFn: provider.fetchFn }),
-    /Council incomplete.*EXTERNAL_REALITY/);
+    /[Ii]ndependent council incomplete.*EXTERNAL_REALITY/);
 });
 
 test('a malformed model JSON report fails closed', async () => {
   const provider = mocked({ malformedProvider: 'google' });
   await assert.rejects(runIndependentCouncil(proposal, { env, fetchFn: provider.fetchFn }),
-    /Council incomplete.*ECONOMIC_RISK/);
+    /[Ii]ndependent council incomplete.*ECONOMIC_RISK/);
 });
 
 test('rejects duplicate provider or model identity even with five votes', async () => {
