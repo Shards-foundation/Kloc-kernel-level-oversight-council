@@ -1,9 +1,9 @@
 {
   "name": "kloc-oversight-council",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "type": "module",
-  "description": "KLOC five independent AI reviewers with deterministic council resolution",
+  "description": "KLOC five-model oversight council with optional free/local backup sub-seats",
   "scripts": {
     "dev": "concurrently --kill-others \"node server/index.mjs\" \"vite --host 127.0.0.1\"",
     "build": "tsc --noEmit && vite build",
