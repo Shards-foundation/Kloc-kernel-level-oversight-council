@@ -3,9 +3,8 @@ import 'dotenv/config';
 import http from 'node:http';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { resolve, sep, extname } from 'node:path';
-import { GoogleGenAI } from '@google/genai';
-import { validateProposal, normalizeCouncilResult } from './council.mjs';
-import { KLOC_SYSTEM_PROMPT } from './prompt.mjs';
+import { validateProposal } from './council.mjs';
+import { runIndependentCouncil, isCouncilConfigured } from './providers.mjs';
 
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || '8787');
@@ -58,23 +57,8 @@ function checkOrigin(req) {
   } catch { return false; }
 }
 
-async function assess(proposal) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw Object.assign(new Error('GEMINI_API_KEY is not configured on the server'), { status: 503 });
-  const ai = new GoogleGenAI({ apiKey });
-  const response = await ai.models.generateContent({
-    model: process.env.KLOC_MODEL || 'gemini-2.5-flash',
-    contents: JSON.stringify({ proposal }),
-    config: {
-      systemInstruction: KLOC_SYSTEM_PROMPT,
-      responseMimeType: 'application/json',
-      temperature: 0.1
-    }
-  });
-  if (!response.text) throw new Error('Empty model response');
-  // A model cannot approve itself: this function recalculates every resolution.
-  return normalizeCouncilResult(JSON.parse(response.text), proposal);
-}
+// Five separately invoked providers; never a single simulated council call.
+const assess = runIndependentCouncil;
 
 async function serveStatic(req, res, pathname, staticRoot = DIST) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'Method not allowed' });
@@ -137,7 +121,7 @@ export function makeServer({ staticRoot = DIST, assessProposal = assess } = {}) 
     catch { return send(res, 400, { error: 'Malformed URL' }); }
 
     if (pathname === '/api/health' && req.method === 'GET')
-      return send(res, 200, { status: 'running', configured: Boolean(process.env.GEMINI_API_KEY) });
+      return send(res, 200, { status: 'running', configured: isCouncilConfigured() });
     if (pathname !== '/api/analyze') {
       if (pathname.startsWith('/api/')) return send(res, 404, { error: 'Not found' });
       return serveStatic(req, res, pathname, staticRoot);
