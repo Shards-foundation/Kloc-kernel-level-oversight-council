@@ -87,7 +87,7 @@ test('calls five separate APIs and no provider sees other provider reviews', asy
   for (const call of provider.calls) {
     const body = JSON.stringify(JSON.parse(call.init.body));
     assert.match(body, /Evaluate permissioned agent/);
-    assert.match(body, new RegExp(call.reviewer.seat));
+    assert.ok(body.includes(call.reviewer.seat));
     assert.doesNotMatch(body, /Excessive privileges/);
     assert.equal(body.includes(call.reviewer.credential), false);
   }
