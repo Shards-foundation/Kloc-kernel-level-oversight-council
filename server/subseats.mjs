@@ -153,10 +153,12 @@ export async function runSubseat(config, proposal, { fetchFn = fetch, timeoutMs 
   if (!isObject(candidate) || candidate.seat !== config.seat)
     throw new Error('Sub-seat seat identity mismatch');
   const seat = verifySingleSeat(candidate, config.seat);
+  // Only canonical token fields can be emitted; never use provider-derived keys.
   const usage = {};
-  for (const [k, v] of Object.entries(decoded.usage)) {
-    if (Number.isFinite(v) && v >= 0) usage[k] = v;
-  }
+  if (Number.isFinite(decoded.usage.input_tokens) && decoded.usage.input_tokens >= 0)
+    usage.input_tokens = decoded.usage.input_tokens;
+  if (Number.isFinite(decoded.usage.output_tokens) && decoded.usage.output_tokens >= 0)
+    usage.output_tokens = decoded.usage.output_tokens;
   return {
     seat,
     metadata: {
