@@ -1,5 +1,5 @@
 // Five distinct provider integrations. No shared inference proxy, no fallback model.
-import { SEATS, normalizeCouncilResult, validateProposal } from './council.mjs';
+import { SEATS, normalizeCouncilResult, validateProposal, verifySingleSeat } from './council.mjs';
 import { seatPrompt } from './prompt.mjs';
 import { loadSubseats, runSubseat } from './subseats.mjs';
 
@@ -161,8 +161,11 @@ export async function runReviewer(config, proposal, { fetchFn = fetch, timeoutMs
   if (!seat || Array.isArray(seat) || typeof seat !== 'object' || seat.seat !== config.seat) {
     throw new TypeError(config.seat + ': reviewer identity mismatch');
   }
+  // Validate each primary before considering it successful; an incomplete
+  // model report is a failed reviewer and can trigger an explicit sub-seat.
+  const verifiedSeat = verifySingleSeat(seat, config.seat);
   return {
-    seat,
+    seat: verifiedSeat,
     metadata: {
       seat: config.seat, provider: config.provider, model: config.model,
       latency_ms: Math.max(0, now() - started),
