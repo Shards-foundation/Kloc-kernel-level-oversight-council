@@ -79,13 +79,13 @@ export function resolveCouncil(seats, knownUnknowns = '') {
   const escalated = seats.filter(s => s.verdict === 'ESCALATE');
   const soft = seats.filter(s => s.verdict === 'SOFT_REJECT');
   const operatorUnknowns = typeof knownUnknowns === 'string' && knownUnknowns.trim().length > 0;
-  const unresolvedNoObjection = seats.filter(s => s.verdict === 'NO_OBJECTION' && s.unknowns.length > 0);
+  const unresolvedSeats = seats.filter(s => s.unknowns.length > 0);
 
   let final_state, rule;
   if (hard.length) {
     final_state = 'BLOCK';
     rule = 'Any HARD_REJECT -> BLOCK (' + hard.map(s => s.seat).join(', ') + ')';
-  } else if (escalated.length || operatorUnknowns || unresolvedNoObjection.length) {
+  } else if (escalated.length || operatorUnknowns || unresolvedSeats.length) {
     final_state = 'MANUAL_REVIEW';
     rule = 'ESCALATE or unresolved unknowns -> MANUAL_REVIEW';
   } else if (soft.length >= 2) {
@@ -105,9 +105,8 @@ export function resolveCouncil(seats, knownUnknowns = '') {
       s.soft_reject_flags.map(item => s.seat + ': ' + item) : [s.seat + ': SOFT_REJECT']),
     manual_review_questions: [
       ...(operatorUnknowns ? ['Operator-admitted unknowns: ' + knownUnknowns.trim()] : []),
-      ...unresolvedNoObjection.flatMap(s => s.unknowns.map(item => s.seat + ': ' + item)),
-      ...escalated.flatMap(s => s.unknowns.length ?
-        s.unknowns.map(item => s.seat + ': ' + item) : [s.seat + ': escalation requires review'])
+      ...unresolvedSeats.flatMap(s => s.unknowns.map(item => s.seat + ': ' + item)),
+      ...escalated.filter(s => s.unknowns.length === 0).map(s => s.seat + ': escalation requires review')
     ]
   };
 }
