@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { DEFAULT_PROPOSAL, ProposalData, KlocResponse } from './types';
-import { runKlocAnalysis } from './services/gemini';
+import { runKlocAnalysis } from './services/council';
 import { ProposalForm } from './components/ProposalForm';
 import { KlocResults } from './components/KlocResults';
 import { Box } from 'lucide-react';
@@ -51,7 +51,7 @@ const App: React.FC = () => {
                         <Box size={20} strokeWidth={3} />
                     </div>
                     <div>
-                        <h1 className="font-mono font-bold tracking-tight text-white leading-none">KLOC v1.1</h1>
+                        <h1 className="font-mono font-bold tracking-tight text-white leading-none">KLOC v1.2</h1>
                         <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Kernel-Level Oversight Council</span>
                     </div>
                 </div>
