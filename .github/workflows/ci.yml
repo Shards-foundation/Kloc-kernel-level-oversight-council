@@ -24,3 +24,5 @@ jobs:
         run: npm test
       - name: Type-check and bundle application
         run: npm run build
+      - name: Verify client bundle contains no provider key or ESM import map
+        run: npm run check:bundle
