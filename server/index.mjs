@@ -137,7 +137,10 @@ export function makeServer() {
 
     inFlight++;
     try {
-      const proposal = validateProposal(await readJson(req));
+      const rawProposal = await readJson(req);
+      let proposal;
+      try { proposal = validateProposal(rawProposal); }
+      catch (err) { return send(res, 400, { error: err.message }); }
       const result = await assess(proposal);
       return send(res, 200, result);
     } catch (err) {
