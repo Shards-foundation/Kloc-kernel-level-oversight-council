@@ -7,12 +7,6 @@ export const VERDICTS = Object.freeze([
   'NO_OBJECTION', 'SOFT_REJECT', 'HARD_REJECT', 'ESCALATE'
 ]);
 
-const PROPOSAL_FIELDS = Object.freeze([
-  'proposal_id', 'title', 'context', 'scope', 'assets_at_risk',
-  'execution_boundary', 'tools_and_integrations', 'data_sources',
-  'success_criteria', 'constraints', 'unknowns_you_already_know'
-]);
-
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = message => { throw new TypeError(message); };
 
@@ -33,13 +27,26 @@ function score(value, label, max) {
 
 export function validateProposal(input) {
   if (!record(input)) fail('Proposal must be an object');
-  const proposal = {};
-  for (const field of PROPOSAL_FIELDS) {
+  // Explicit fields only; never copy arbitrary user keys into policy objects.
+  const readField = field => {
     const value = input[field] ?? '';
     if (typeof value !== 'string' || value.length > 8000)
       fail(field + ' must be a string no longer than 8000 characters');
-    proposal[field] = value.trim();
-  }
+    return value.trim();
+  };
+  const proposal = {
+    proposal_id: readField('proposal_id'),
+    title: readField('title'),
+    context: readField('context'),
+    scope: readField('scope'),
+    assets_at_risk: readField('assets_at_risk'),
+    execution_boundary: readField('execution_boundary'),
+    tools_and_integrations: readField('tools_and_integrations'),
+    data_sources: readField('data_sources'),
+    success_criteria: readField('success_criteria'),
+    constraints: readField('constraints'),
+    unknowns_you_already_know: readField('unknowns_you_already_know')
+  };
   nonemptyString(proposal.title, 'title', 8000);
   nonemptyString(proposal.context, 'context', 8000);
   // Never trust or execute arbitrary model-selected proposal identifiers.
