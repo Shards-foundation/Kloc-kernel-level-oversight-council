@@ -28,7 +28,7 @@ const App: React.FC = () => {
       const klocResponse = await runKlocAnalysis(proposal);
       setResult(klocResponse);
     } catch (err) {
-      setError("Analysis Failed. Ensure you have a valid API Key and network connection.");
+      setError(err instanceof Error ? err.message : "Analysis failed; no decision issued.");
       console.error(err);
     } finally {
       setIsLoading(false);
@@ -51,12 +51,12 @@ const App: React.FC = () => {
                         <Box size={20} strokeWidth={3} />
                     </div>
                     <div>
-                        <h1 className="font-mono font-bold tracking-tight text-white leading-none">KLOC v1.0</h1>
+                        <h1 className="font-mono font-bold tracking-tight text-white leading-none">KLOC v1.1</h1>
                         <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Kernel-Level Oversight Council</span>
                     </div>
                 </div>
                 <div className="text-xs font-mono text-zinc-600 hidden sm:block">
-                    STATUS: <span className="text-emerald-500">ONLINE</span>
+                    MODE: <span className="text-emerald-500">LOCAL REVIEW</span>
                 </div>
             </div>
         </header>
