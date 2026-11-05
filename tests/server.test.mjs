@@ -42,3 +42,35 @@ test('local API serves health and rejects unsafe or invalid requests', async () 
     else process.env.GEMINI_API_KEY = oldKey;
   }
 });
+
+
+test('health exposes backup configuration without implying local runtime reachability', async () => {
+  const previous = {
+    KLOC_SUBSEATS_ENABLED: process.env.KLOC_SUBSEATS_ENABLED,
+    KLOC_SUBSEATS_JSON: process.env.KLOC_SUBSEATS_JSON
+  };
+  process.env.KLOC_SUBSEATS_ENABLED = 'true';
+  process.env.KLOC_SUBSEATS_JSON = JSON.stringify([
+    { seat: 'SECURITY', provider: 'ollama', model: 'qwen3:8b' }
+  ]);
+  const server = makeServer();
+  try {
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const health = await fetch('http://127.0.0.1:' + server.address().port + '/api/health');
+    assert.equal(health.status, 200);
+    const data = await health.json();
+    assert.deepEqual(data.backup_subseats, {
+      enabled: true, configured_seats: 1, valid_config: true
+    });
+    assert.equal(typeof data.configured, 'boolean');
+    assert.equal(data.backup_subseats.connected, undefined);
+  } finally {
+    if (server.listening) {
+      await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+    }
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
