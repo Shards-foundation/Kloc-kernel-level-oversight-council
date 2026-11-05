@@ -77,7 +77,9 @@ function fakeResponses({ failPrimaries = [], badSubseat = '', hardPrimary = '', 
         done_reason: 'stop',
         prompt_eval_count: 14, eval_count: 18,
         message: { content: JSON.stringify(verdict(
-          badSubseat === 'ollama-seat' ? 'EXTERNAL_REALITY' : 'SECURITY'
+          badSubseat === 'ollama-seat' ? 'EXTERNAL_REALITY' :
+            request.messages[0].content.includes('Your assigned seat is SYSTEMS_INTEGRITY')
+              ? 'SYSTEMS_INTEGRITY' : 'SECURITY'
         )) }
       });
     }
@@ -242,6 +244,27 @@ test('tries next explicitly configured backup after first local sub-seat fails',
   const result = await runIndependentCouncil(proposal, { env, fetchFn: mocked.fetchFn });
   assert.equal(result.kernel_resolution.final_state, 'MANUAL_REVIEW');
   assert.equal(result.fallback_events[0].provider, 'lmstudio');
+  assert.equal(mocked.calls.filter(c => c.url.includes('127.0.0.1:11434')).length, 1);
+  assert.equal(mocked.calls.filter(c => c.url.includes('127.0.0.1:1234')).length, 1);
+});
+
+
+test('global fallback matching reserves a scarce model for another failed seat', async () => {
+  // SECURITY can use model A or B; SYSTEMS_INTEGRITY can only use A.
+  // Naive greedy selection would give A to SECURITY and cause a false failure.
+  const pool = [
+    { seat: 'SECURITY', provider: 'ollama', model: 'qwen3:8b', priority: 1 },
+    { seat: 'SECURITY', provider: 'lmstudio', model: 'local/qwen3-14b', priority: 2 },
+    { seat: 'SYSTEMS_INTEGRITY', provider: 'ollama', model: 'qwen3:8b', priority: 1 }
+  ];
+  const env = withSubseats(pool, { ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '' });
+  const mocked = fakeResponses();
+  const result = await runIndependentCouncil(proposal, { env, fetchFn: mocked.fetchFn });
+  assert.equal(result.fallback_events.length, 2);
+  assert.equal(result.kernel_resolution.final_state, 'MANUAL_REVIEW');
+  assert.equal(result.reviewers[0].model, 'local/qwen3-14b');
+  assert.equal(result.reviewers[1].model, 'qwen3:8b');
+  assert.equal(new Set(result.reviewers.map(item => item.model)).size, 5);
   assert.equal(mocked.calls.filter(c => c.url.includes('127.0.0.1:11434')).length, 1);
   assert.equal(mocked.calls.filter(c => c.url.includes('127.0.0.1:1234')).length, 1);
 });
