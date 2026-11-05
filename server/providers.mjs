@@ -28,9 +28,12 @@ function assertConfiguration(config) {
   const providers = config.map(x => x.provider);
   const models = config.map(x => x.model);
   const validSeats = SEATS.every(s => seats.includes(s));
-  if (!validSeats || new Set(seats).size !== 5 ||
+  const expectedMapping = config.every(entry =>
+    DEFAULTS.some(defaultReviewer =>
+      entry.seat === defaultReviewer.seat && entry.provider === defaultReviewer.provider));
+  if (!validSeats || !expectedMapping || new Set(seats).size !== 5 ||
       new Set(providers).size !== 5 || new Set(models).size !== 5) {
-    throw Object.assign(new Error('Five unique seats, providers and models are required'), { status: 503 });
+    throw Object.assign(new Error('Five unique seats, providers and models with correct provider ownership are required'), { status: 503 });
   }
   const missing = config.filter(x => !x.credential || x.credential.startsWith('replace-with-'));
   if (missing.length) {
