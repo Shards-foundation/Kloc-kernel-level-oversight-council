@@ -1,7 +1,7 @@
 // Local-only by default. Remote deployment needs a separately reviewed auth gateway.
 import 'dotenv/config';
 import http from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import { resolve, sep, extname } from 'node:path';
 import { GoogleGenAI } from '@google/genai';
 import { validateProposal, normalizeCouncilResult } from './council.mjs';
@@ -78,24 +78,42 @@ async function assess(proposal) {
   return normalizeCouncilResult(JSON.parse(response.text), proposal);
 }
 
-async function serveStatic(req, res, pathname) {
+async function serveStatic(req, res, pathname, staticRoot = DIST) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'Method not allowed' });
   let decoded;
   try { decoded = decodeURIComponent(pathname); }
   catch { return send(res, 400, { error: 'Malformed path' }); }
-  const filename = resolve(DIST, '.' + decoded);
-  if (filename !== DIST && !filename.startsWith(DIST + sep))
+
+  let root;
+  try { root = await realpath(staticRoot); }
+  catch { return send(res, 404, { error: 'UI not built. Run npm run dev or npm run build.' }); }
+
+  const requested = resolve(root, '.' + decoded);
+  if (requested !== root && !requested.startsWith(root + sep))
     return send(res, 403, { error: 'Forbidden' });
 
-  let target = filename;
-  try {
-    const info = await stat(target);
-    if (!info.isFile()) target = resolve(DIST, 'index.html');
-  } catch {
-    target = resolve(DIST, 'index.html');
+  // Resolve symlinks before reading. Lexical path containment alone is insufficient.
+  async function safeFile(candidate) {
+    let canonical;
+    try { canonical = await realpath(candidate); }
+    catch (err) {
+      if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return null;
+      throw err;
+    }
+    if (canonical !== root && !canonical.startsWith(root + sep))
+      return { escaped: true };
+    const info = await stat(canonical);
+    return info.isFile() ? { file: canonical } : null;
   }
+
   try {
-    const data = await readFile(target);
+    let candidate = await safeFile(requested);
+    if (candidate?.escaped) return send(res, 403, { error: 'Forbidden' });
+    if (!candidate) candidate = await safeFile(resolve(root, 'index.html'));
+    if (candidate?.escaped) return send(res, 403, { error: 'Forbidden' });
+    if (!candidate?.file) return send(res, 404, { error: 'UI not built. Run npm run build.' });
+
+    const data = await readFile(candidate.file);
     const mime = ({
       '.html': 'text/html; charset=utf-8',
       '.js': 'application/javascript; charset=utf-8',
@@ -104,15 +122,15 @@ async function serveStatic(req, res, pathname) {
       '.json': 'application/json; charset=utf-8',
       '.png': 'image/png',
       '.ico': 'image/x-icon'
-    })[extname(target)] || 'application/octet-stream';
+    })[extname(candidate.file)] || 'application/octet-stream';
     res.writeHead(200, { 'content-type': mime, 'x-content-type-options': 'nosniff' });
     res.end(req.method === 'HEAD' ? undefined : data);
   } catch {
-    send(res, 404, { error: 'UI not built. Run npm run dev or npm run build.' });
+    send(res, 404, { error: 'Static content unavailable' });
   }
 }
 
-export function makeServer() {
+export function makeServer({ staticRoot = DIST, assessProposal = assess } = {}) {
   return http.createServer(async (req, res) => {
     let pathname;
     try { pathname = new URL(req.url || '/', 'http://localhost').pathname; }
@@ -122,7 +140,7 @@ export function makeServer() {
       return send(res, 200, { status: 'running', configured: Boolean(process.env.GEMINI_API_KEY) });
     if (pathname !== '/api/analyze') {
       if (pathname.startsWith('/api/')) return send(res, 404, { error: 'Not found' });
-      return serveStatic(req, res, pathname);
+      return serveStatic(req, res, pathname, staticRoot);
     }
     if (req.method !== 'POST') return send(res, 405, { error: 'Method not allowed' });
     if (!checkOrigin(req)) return send(res, 403, { error: 'Disallowed Origin' });
@@ -141,7 +159,7 @@ export function makeServer() {
       let proposal;
       try { proposal = validateProposal(rawProposal); }
       catch (err) { return send(res, 400, { error: err.message }); }
-      const result = await assess(proposal);
+      const result = await assessProposal(proposal);
       return send(res, 200, result);
     } catch (err) {
       if (err?.status) return send(res, err.status, { error: err.message });
