@@ -37,9 +37,24 @@ function isKlocResponse(value: unknown): value is KlocResponse {
         !stringArray(seat.minimal_test_plan)) return false;
     seatNames.add(seat.seat);
   }
-  return seatNames.size === 5 &&
-    ['SECURITY', 'SYSTEMS_INTEGRITY', 'ECONOMIC_RISK', 'FOUNDER_ADVERSARY', 'EXTERNAL_REALITY']
-      .every(name => seatNames.has(name));
+  const allSeats = ['SECURITY', 'SYSTEMS_INTEGRITY', 'ECONOMIC_RISK', 'FOUNDER_ADVERSARY', 'EXTERNAL_REALITY'];
+  if (value.council_mode !== 'five-independent-providers' ||
+      !Array.isArray(value.reviewers) || value.reviewers.length !== 5) return false;
+  const providers = new Set<string>();
+  const models = new Set<string>();
+  const reviewerSeats = new Set<string>();
+  for (const reviewer of value.reviewers) {
+    if (!isObject(reviewer) || typeof reviewer.seat !== 'string' ||
+        typeof reviewer.provider !== 'string' || typeof reviewer.model !== 'string' ||
+        typeof reviewer.latency_ms !== 'number' ||
+        !Number.isFinite(reviewer.latency_ms) || reviewer.latency_ms < 0 ||
+        !['anthropic', 'openai', 'google', 'xai', 'mistral'].includes(reviewer.provider)) return false;
+    providers.add(reviewer.provider);
+    models.add(reviewer.model);
+    reviewerSeats.add(reviewer.seat);
+  }
+  return seatNames.size === 5 && providers.size === 5 && models.size === 5 &&
+    reviewerSeats.size === 5 && allSeats.every(name => seatNames.has(name) && reviewerSeats.has(name));
 }
 
 // Provider credentials are never transmitted to the browser.
