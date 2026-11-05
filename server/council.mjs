@@ -54,6 +54,26 @@ export function validateProposal(input) {
   return proposal;
 }
 
+export function verifySingleSeat(value, expectedSeat) {
+  if (!record(value) || !SEATS.includes(value.seat) || value.seat !== expectedSeat)
+    fail('Unknown or mismatched reviewer seat');
+  if (!VERDICTS.includes(value.verdict)) fail('Invalid verdict for ' + value.seat);
+  const seat = {
+    seat: value.seat,
+    verdict: value.verdict,
+    risk_score: score(value.risk_score, 'risk_score', 10),
+    confidence: score(value.confidence, 'confidence', 1),
+    hard_reject_triggers: stringArray(value.hard_reject_triggers, 'hard_reject_triggers'),
+    soft_reject_flags: stringArray(value.soft_reject_flags, 'soft_reject_flags'),
+    unknowns: stringArray(value.unknowns, 'unknowns'),
+    required_mitigations: stringArray(value.required_mitigations, 'required_mitigations'),
+    minimal_test_plan: stringArray(value.minimal_test_plan, 'minimal_test_plan')
+  };
+  if (seat.hard_reject_triggers.length && seat.verdict !== 'HARD_REJECT')
+    fail('Hard rejection triggers require HARD_REJECT verdict');
+  return seat;
+}
+
 export function verifySeats(raw) {
   if (!record(raw) || !Array.isArray(raw.seats) || raw.seats.length !== SEATS.length)
     fail('Council must return exactly five seats');
@@ -62,21 +82,7 @@ export function verifySeats(raw) {
     if (!record(value) || !SEATS.includes(value.seat) || seen.has(value.seat))
       fail('Unknown or duplicate seat at index ' + index);
     seen.add(value.seat);
-    if (!VERDICTS.includes(value.verdict)) fail('Invalid verdict for ' + value.seat);
-    const seat = {
-      seat: value.seat,
-      verdict: value.verdict,
-      risk_score: score(value.risk_score, 'risk_score', 10),
-      confidence: score(value.confidence, 'confidence', 1),
-      hard_reject_triggers: stringArray(value.hard_reject_triggers, 'hard_reject_triggers'),
-      soft_reject_flags: stringArray(value.soft_reject_flags, 'soft_reject_flags'),
-      unknowns: stringArray(value.unknowns, 'unknowns'),
-      required_mitigations: stringArray(value.required_mitigations, 'required_mitigations'),
-      minimal_test_plan: stringArray(value.minimal_test_plan, 'minimal_test_plan')
-    };
-    if (seat.hard_reject_triggers.length && seat.verdict !== 'HARD_REJECT')
-      fail('Hard rejection triggers require HARD_REJECT verdict');
-    return seat;
+    return verifySingleSeat(value, value.seat);
   });
   return SEATS.map(name => seats.find(seat => seat.seat === name));
 }
