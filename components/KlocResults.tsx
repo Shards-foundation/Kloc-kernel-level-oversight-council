@@ -1,6 +1,7 @@
 import React from 'react';
 import { KlocResponse, FinalState } from '../types';
 import { SeatCard } from './SeatCard';
+import { councilPresentation } from '../services/council-presentation.mjs';
 import { AlertOctagon, CheckCircle, PauseCircle, ShieldBan, Terminal } from 'lucide-react';
 
 interface KlocResultsProps {
@@ -43,6 +44,7 @@ const getFinalStateDetails = (state: FinalState) => {
 
 export const KlocResults: React.FC<KlocResultsProps> = ({ response, onReset }) => {
   const status = getFinalStateDetails(response.kernel_resolution.final_state);
+  const presentation = councilPresentation(response);
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -74,16 +76,12 @@ export const KlocResults: React.FC<KlocResultsProps> = ({ response, onReset }) =
         </div>
       </div>
 
-      <div className={`rounded-lg border p-4 text-xs font-mono ${response.fallback_events?.length
+      <div className={`rounded-lg border p-4 text-xs font-mono ${presentation.degraded
         ? 'border-amber-500/40 bg-amber-950/20 text-amber-200'
         : 'border-blue-500/20 bg-zinc-900/60 text-zinc-400'}`}>
-        {response.fallback_events?.length
-          ? `DEGRADED COUNCIL · ${response.fallback_events.length} BACKUP SUB-SEAT(S) · HUMAN REVIEW REQUIRED`
-          : 'FULL PRIMARY COUNCIL · 5 INDEPENDENT PROVIDERS · 5/5 REVIEWERS'}
-        {response.fallback_events?.map(event => (
-          <div key={event.seat} className="mt-2 text-zinc-300">
-            {event.seat}: {event.replaced_provider} unavailable → {event.provider} / {event.model}
-          </div>
+        {presentation.label}
+        {presentation.replacements.map(item => (
+          <div key={item.seat} className="mt-2 text-zinc-300">{item.label}</div>
         ))}
       </div>
 
