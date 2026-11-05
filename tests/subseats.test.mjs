@@ -25,10 +25,10 @@ const backups = [
 ];
 const withSubseats = (items = backups, overrides = {}) => ({
   ...KEY_ENV,
-  ...overrides,
   KLOC_SUBSEATS_ENABLED: 'true',
   KLOC_SUBSEATS_JSON: JSON.stringify(items),
-  OPENROUTER_API_KEY: 'openrouter-test'
+  OPENROUTER_API_KEY: 'openrouter-test',
+  ...overrides
 });
 
 function fakeResponses({ failPrimaries = [], badSubseat = '', hardPrimary = '' } = {}) {
