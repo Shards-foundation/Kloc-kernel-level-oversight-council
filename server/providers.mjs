@@ -171,11 +171,15 @@ export async function runIndependentCouncil(input, options = {}) {
   const proposal = validateProposal(input);
   // Validate ALL providers and credentials before spending money on any one request.
   const configs = assertConfiguration(options.config || reviewerConfiguration(options.env || process.env));
-  const results = await Promise.allSettled(
-    configs.map(config => runReviewer(config, proposal, options))
-  );
-  const failed = results.flatMap((result, index) => result.status === 'rejected'
-    ? [configs[index].seat] : []);
+  // Each result carries its own trusted seat identity: never index into config from a model response.
+  const outcomes = await Promise.all(configs.map(async config => {
+    try {
+      return { ok: true, report: await runReviewer(config, proposal, options) };
+    } catch {
+      return { ok: false, failedSeat: config.seat };
+    }
+  }));
+  const failed = outcomes.filter(item => !item.ok).map(item => item.failedSeat);
   if (failed.length) {
     // No substitution, no consensus from fewer than five responses.
     throw Object.assign(
@@ -183,7 +187,7 @@ export async function runIndependentCouncil(input, options = {}) {
       { status: 502 }
     );
   }
-  const accepted = results.map(result => result.value);
+  const accepted = outcomes.map(item => item.report);
   const normalized = normalizeCouncilResult({
     proposal_summary_1line: proposal.title,
     seats: accepted.map(x => x.seat),
