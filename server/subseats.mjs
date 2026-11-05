@@ -1,6 +1,6 @@
 // Optional explicitly configured sub-seat pool.
 // All local endpoints are fixed loopback URLs to prevent SSRF through configuration.
-import { SEATS, verifySeats } from './council.mjs';
+import { SEATS, verifySingleSeat } from './council.mjs';
 import { seatPrompt } from './prompt.mjs';
 
 const PROVIDERS = new Set(['ollama', 'lmstudio', 'openrouter']);
@@ -152,16 +152,7 @@ export async function runSubseat(config, proposal, { fetchFn = fetch, timeoutMs 
   catch { throw new Error('Sub-seat returned malformed reviewer JSON'); }
   if (!isObject(candidate) || candidate.seat !== config.seat)
     throw new Error('Sub-seat seat identity mismatch');
-  const seat = verifySeats({
-    seats: [
-      candidate,
-      ...SEATS.filter(name => name !== config.seat).map(name => ({
-        seat: name, verdict: 'NO_OBJECTION', risk_score: 0, confidence: 0,
-        hard_reject_triggers: [], soft_reject_flags: [], unknowns: [],
-        required_mitigations: [], minimal_test_plan: []
-      }))
-    ]
-  }).find(item => item.seat === config.seat);
+  const seat = verifySingleSeat(candidate, config.seat);
   const usage = {};
   for (const [k, v] of Object.entries(decoded.usage)) {
     if (Number.isFinite(v) && v >= 0) usage[k] = v;
