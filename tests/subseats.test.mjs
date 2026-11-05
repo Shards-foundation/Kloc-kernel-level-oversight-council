@@ -84,7 +84,7 @@ function fakeResponses({ failPrimaries = [], badSubseat = '', hardPrimary = '', 
     if (url.includes('127.0.0.1:1234')) return Response.json({
       model: request.model, usage: { prompt_tokens: 15, completion_tokens: 17 },
       choices: [{ finish_reason: 'stop', message: {
-        content: JSON.stringify(verdict('SYSTEMS_INTEGRITY'))
+        content: JSON.stringify(verdict(request.messages[0].content.includes('Your assigned seat is SECURITY') ? 'SECURITY' : 'SYSTEMS_INTEGRITY'))
       } }]
     });
     if (url.includes('openrouter.ai')) return Response.json({
@@ -229,4 +229,19 @@ test('schema-invalid primary vote is treated as failure and replaced by valid lo
   assert.equal(result.fallback_events[0].seat, 'SECURITY');
   assert.equal(result.kernel_resolution.final_state, 'MANUAL_REVIEW');
   assert.equal(mocked.calls.filter(c => c.url.includes('127.0.0.1:11434')).length, 1);
+});
+
+
+test('tries next explicitly configured backup after first local sub-seat fails', async () => {
+  const candidatePool = [
+    { seat: 'SECURITY', provider: 'ollama', model: 'qwen3:8b', priority: 1 },
+    { seat: 'SECURITY', provider: 'lmstudio', model: 'local/qwen3-14b', priority: 2 }
+  ];
+  const env = withSubseats(candidatePool, { ANTHROPIC_API_KEY: '' });
+  const mocked = fakeResponses({ badSubseat: 'ollama-http' });
+  const result = await runIndependentCouncil(proposal, { env, fetchFn: mocked.fetchFn });
+  assert.equal(result.kernel_resolution.final_state, 'MANUAL_REVIEW');
+  assert.equal(result.fallback_events[0].provider, 'lmstudio');
+  assert.equal(mocked.calls.filter(c => c.url.includes('127.0.0.1:11434')).length, 1);
+  assert.equal(mocked.calls.filter(c => c.url.includes('127.0.0.1:1234')).length, 1);
 });
