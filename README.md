@@ -1,54 +1,87 @@
-# KLOC v1.0 — Kernel-Level Oversight Council
+# KLOC — Kernel-Level Oversight Council
 
-> **"KLOC is not here to help ideas succeed. It is here to help bad ideas die early."**
+> **KLOC exists to help bad ideas fail before they become costly actions.**
 
-KLOC (Kernel-Level Oversight Council) is an operational epistemic firewall and forced disagreement engine. It is designed to stress-test technical and strategic proposals using a simulated council of five independent adversarial AI agents. 
+KLOC is an open-source **adversarial proposal-review application** in the Shards ecosystem. It examines proposed AI systems and engineering changes for hidden failure modes. It is **not** an autonomous executor or a replacement for Shards-Kernel policy enforcement.
 
-Most AI assistants are biased toward helpfulness and compliance. KLOC is biased toward rejection and skepticism.
+## Current capabilities (v1.1 development)
 
-## 🏛 The Council Seats
-Each seat operates in isolation to prevent consensus drift:
+- Structured proposal intake with explicit scope, execution boundaries, risk assets and unknowns.
+- Five **simulated** adversarial council perspectives: security, systems integrity, economic risk, founder-adversary and external reality.
+- Gemini-backed analysis running on a **server-only** integration.
+- Strict validation of model-generated seat results. Invalid or incomplete council results fail closed.
+- **Independent, deterministic** rule calculation by application code. Model-supplied final states are ignored.
+- Human-readable review cards, blocking reasons, mitigation requirements and rule traces.
+- Automated decision logic tests and a build-gated GitHub Actions workflow.
 
-*   **🛡 SECURITY**: Identifies exploit surfaces, privilege escalation, and data poisoning.
-*   **⚙️ SYSTEMS INTEGRITY**: Detects non-determinism, hidden state, and observability gaps.
-*   **💰 ECONOMIC RISK**: Identifies cost blowouts, runaway spend, and tail risks.
-*   **👺 FOUNDER-ADVERSARY**: Assumes the proposer is wrong, biased, or euphoric.
-*   **🌐 EXTERNAL REALITY**: Identifies legal unknowns, dependency fragility, and vendor lock-in.
+### Decision precedence
 
-## ⚖️ Operational Protocol
-1.  **No Approval Votes**: The only valid outputs are `NO_OBJECTION`, `SOFT_REJECT`, `HARD_REJECT`, or `ESCALATE`.
-2.  **Deterministic Resolution**: 
-    *   Any `HARD_REJECT` = **BLOCK**
-    *   Any `ESCALATE` = **MANUAL REVIEW**
-    *   2+ `SOFT_REJECT` = **DEFER**
-3.  **Hypothesis Verification**: Stated "Success Criteria" are treated as attack surfaces, not facts.
-4.  **Unknown Enforcement**: If information is missing, the engine is programmed to increase friction, not bypass it.
+1. At least one `HARD_REJECT` → `BLOCK`.
+2. Otherwise an `ESCALATE` or admitted material unknown → `MANUAL_REVIEW`.
+3. Otherwise two or more `SOFT_REJECT` → `DEFER`.
+4. Otherwise → `PROCEED` (**advisory**, never execution authority).
 
-## 🚀 Getting Started
+The council represents five specialist **perspectives in one model call**, not five independent running agents. The system may make analytical mistakes; its conclusions require verification where consequences matter.
 
-### Prerequisites
-*   A Google Gemini API Key.
-*   A modern browser.
+## Local setup
 
-### Installation
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/your-org/kloc.git
-    ```
-2.  Set your environment variable:
-    ```bash
-    export API_KEY='your-gemini-api-key'
-    ```
-3.  Serve the project root (e.g., using `npx serve` or simply opening `index.html` in an environment that supports ES modules).
+Requires Node.js 22+ and a Gemini API key.
 
-## 🛠 Tech Stack
-*   **Core**: React 19 (via ESM)
-*   **Styling**: Tailwind CSS
-*   **Intelligence**: @google/genai (Gemini 2.5 Flash)
-*   **Icons**: Lucide React
+```sh
+npm install
+cp .env.example .env
+# Edit .env and set GEMINI_API_KEY to a real key.
+npm run dev
+```
 
-## 📄 License
-MIT License. See [LICENSE](LICENSE) for details.
+Open **http://127.0.0.1:3000**. Vite serves the React interface; a localhost-only Node.js server handles `/api/analyze` on port 8787.
 
----
-*Created for the Shards Inc Ecosystem. Internal use only. No execution authority.*
+Do **not** paste provider credentials into browser source, `vite.config.ts`, public environment variables, screenshots or repository files. The private key belongs in the server-side `.env`, which is gitignored.
+
+### Validation
+
+```sh
+npm test
+npm run build
+npm start
+```
+
+After a production build, `npm start` serves the UI/API locally on http://127.0.0.1:8787. Health endpoint: `GET /api/health`.
+
+**Deployment constraint:** The backend intentionally refuses non-loopback network binding. Do not disable that restriction or publicly expose the API before authentication, rate limits, a secure reverse proxy and deployment security are reviewed. The current frontend loads Tailwind from a CDN; this also needs replacement before a production-grade public release.
+
+### Mobile access
+
+GitHub code, CI and pull requests can be reviewed from a phone. Running KLOC from a phone over the internet will require a separately secured hosted gateway; this repository is currently configured for localhost-only execution.
+
+## Architecture
+
+```text
+React ProposalForm
+      |
+      | POST /api/analyze (same origin)
+      v
+Local Node.js API ----> Gemini provider
+      |
+      v
+Validate exactly five seats and all typed fields
+      |
+      v
+Recalculate council result in trusted application code
+      |
+      v
+React KlocResults (advisory only)
+```
+
+- `server/council.mjs`: input validation, schema checks and independent deterministic resolution.
+- `server/index.mjs`: local HTTP API, server-side provider access and static UI serving.
+- `server/prompt.mjs`: server-side council instructions.
+- `tests/council.test.mjs`: fail-closed and verdict precedence regression tests.
+
+## Planned, not implemented
+
+Independent provider-isolated council agents, multi-model adapters, persistent decisions, cost/latency/usage telemetry, task-outcome scoring, adaptive routing, Shards-Kernel permits, secure public authentication and durable signed audit records.
+
+These are future milestones, **not current runtime capabilities**.
+
+MIT licensed. See [LICENSE](LICENSE).

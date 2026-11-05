@@ -1,26 +1,38 @@
 {
   "name": "kloc-oversight-council",
-  "version": "1.0.0",
-  "description": "Kernel-Level Oversight Council - Forced Disagreement Engine",
-  "main": "index.tsx",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "description": "KLOC adversarial proposal council with deterministic fail-closed resolution",
   "scripts": {
-    "start": "npx serve .",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "concurrently --kill-others \"node server/index.mjs\" \"vite --host 127.0.0.1\"",
+    "build": "tsc --noEmit && vite build",
+    "start": "node server/index.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check:bundle": "node scripts/check-bundle.mjs"
   },
   "keywords": [
     "ai",
     "governance",
     "oversight",
-    "gemini",
     "adversarial",
     "shards"
   ],
-  "author": "Shards Inc Ltd",
   "license": "MIT",
   "dependencies": {
-    "@google/genai": "^2.13.0",
-    "lucide-react": "^1.7.0",
-    "react": "^19.2.3",
-    "react-dom": "^19.2.3"
+    "@google/genai": "^1.33.0",
+    "dotenv": "^16.6.0",
+    "lucide-react": "^0.561.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.0",
+    "vite": "^7.1.0"
   }
 }
