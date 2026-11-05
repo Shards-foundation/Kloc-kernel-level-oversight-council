@@ -5,6 +5,7 @@ import { readFile, realpath, stat } from 'node:fs/promises';
 import { resolve, sep, extname } from 'node:path';
 import { validateProposal } from './council.mjs';
 import { runIndependentCouncil, isCouncilConfigured } from './providers.mjs';
+import { subSeatStatus } from './subseats.mjs';
 
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || '8787');
@@ -121,7 +122,10 @@ export function makeServer({ staticRoot = DIST, assessProposal = assess } = {}) 
     catch { return send(res, 400, { error: 'Malformed URL' }); }
 
     if (pathname === '/api/health' && req.method === 'GET')
-      return send(res, 200, { status: 'running', configured: isCouncilConfigured() });
+      return send(res, 200, {
+        status: 'running', configured: isCouncilConfigured(),
+        backup_subseats: subSeatStatus()
+      });
     if (pathname !== '/api/analyze') {
       if (pathname.startsWith('/api/')) return send(res, 404, { error: 'Not found' });
       return serveStatic(req, res, pathname, staticRoot);
