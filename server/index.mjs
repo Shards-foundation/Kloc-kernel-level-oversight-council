@@ -12,8 +12,6 @@ const PORT = Number(process.env.PORT || '8787');
 const DIST = resolve(process.cwd(), 'dist');
 const MAX_BODY_BYTES = 48 * 1024;
 const RATE_LIMIT = 6;
-const recent = new Map();
-let inFlight = 0;
 
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535)
   throw new Error('PORT must be between 1 and 65535');
@@ -131,6 +129,8 @@ async function serveStatic(req, res, pathname, staticRoot = DIST) {
 }
 
 export function makeServer({ staticRoot = DIST, assessProposal = assess } = {}) {
+  const recent = new Map();
+  let inFlight = 0;
   return http.createServer(async (req, res) => {
     let pathname;
     try { pathname = new URL(req.url || '/', 'http://localhost').pathname; }
