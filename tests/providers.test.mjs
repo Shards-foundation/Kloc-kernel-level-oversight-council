@@ -90,6 +90,29 @@ test('calls five separate APIs and no provider sees other provider reviews', asy
     assert.ok(body.includes(call.reviewer.seat));
     assert.doesNotMatch(body, /Excessive privileges/);
     assert.equal(body.includes(call.reviewer.credential), false);
+    const requestBody = JSON.parse(call.init.body);
+    switch (call.reviewer.provider) {
+      case 'openai':
+        assert.equal(typeof requestBody.instructions, 'string');
+        assert.equal(requestBody.store, false);
+        assert.equal(requestBody.text.format.type, 'json_object');
+        break;
+      case 'anthropic':
+        assert.equal(typeof requestBody.system, 'string');
+        assert.equal(requestBody.messages[0].role, 'user');
+        assert.ok(call.init.headers['x-api-key']);
+        break;
+      case 'google':
+        assert.ok(requestBody.systemInstruction.parts[0].text);
+        assert.equal(requestBody.generationConfig.responseMimeType, 'application/json');
+        break;
+      case 'xai':
+      case 'mistral':
+        assert.equal(requestBody.messages.length, 2);
+        assert.equal(requestBody.messages[0].role, 'system');
+        assert.equal(requestBody.messages[1].role, 'user');
+        break;
+    }
   }
 });
 
@@ -121,4 +144,50 @@ test('rejects duplicate provider or model identity even with five votes', async 
   overridden[1].provider = 'openai';
   overridden[1].model = overridden[0].model;
   await assert.rejects(runIndependentCouncil(proposal, { config: overridden, fetchFn: mock.fetchFn }), /unique/);
+});
+
+
+test('provider timeout fails entire council without fallback', async () => {
+  const normal = mocked();
+  const fetchFn = async (url, init) => {
+    if (url.includes('api.x.ai')) throw new Error('AbortError: timeout');
+    return normal.fetchFn(url, init);
+  };
+  await assert.rejects(runIndependentCouncil(proposal, { env, fetchFn }),
+    /Independent council incomplete.*FOUNDER_ADVERSARY/);
+});
+
+test('truncated/incomplete upstream responses are refused for every provider', async () => {
+  const normal = mocked();
+  for (const offender of ['anthropic', 'openai', 'google', 'xai', 'mistral']) {
+    const fetchFn = async (url, init) => {
+      const res = await normal.fetchFn(url, init);
+      const providerName = url.includes('anthropic.com') ? 'anthropic' :
+        url.includes('openai.com') ? 'openai' :
+        url.includes('googleapis.com') ? 'google' :
+        url.includes('api.x.ai') ? 'xai' : 'mistral';
+      if (providerName !== offender) return res;
+      const payload = await res.json();
+      if (offender === 'anthropic') payload.stop_reason = 'max_tokens';
+      if (offender === 'openai') payload.status = 'incomplete';
+      if (offender === 'google') payload.candidates[0].finishReason = 'MAX_TOKENS';
+      if (offender === 'xai' || offender === 'mistral') payload.choices[0].finish_reason = 'length';
+      return Response.json(payload);
+    };
+    await assert.rejects(runIndependentCouncil(proposal, { env, fetchFn }),
+      /Independent council incomplete/);
+  }
+});
+
+test('unsupported providers, mismatched ownership and invalid model IDs reject before requests', async () => {
+  const mock = mocked();
+  const badProvider = config.map(item => ({ ...item }));
+  badProvider[4].provider = 'unknown-vendor';
+  await assert.rejects(runIndependentCouncil(proposal, { config: badProvider, fetchFn: mock.fetchFn }), /unique/);
+  badProvider[4].provider = 'anthropic';
+  await assert.rejects(runIndependentCouncil(proposal, { config: badProvider, fetchFn: mock.fetchFn }), /unique/);
+  const badModel = config.map(item => ({ ...item }));
+  badModel[0].model = '../../invalid-model';
+  await assert.rejects(runIndependentCouncil(proposal, { config: badModel, fetchFn: mock.fetchFn }), /Invalid model identifier/);
+  assert.equal(mock.calls.length, 0);
 });
