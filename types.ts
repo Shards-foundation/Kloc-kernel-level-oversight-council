@@ -31,15 +31,27 @@ export interface OperatorNotes {
 
 export interface ReviewerTrace {
   seat: SeatName;
-  provider: 'anthropic' | 'openai' | 'google' | 'xai' | 'mistral';
+  provider: 'anthropic' | 'openai' | 'google' | 'xai' | 'mistral' | 'ollama' | 'lmstudio' | 'openrouter';
+  tier?: 'primary' | 'subseat';
+  replaced_provider?: string;
+  backup_reason?: 'primary_not_configured' | 'primary_unavailable';
   model: string;
   latency_ms: number;
   input_tokens?: number;
   output_tokens?: number;
 }
 
+export interface FallbackEvent {
+  seat: SeatName;
+  replaced_provider: string;
+  provider: 'ollama' | 'lmstudio' | 'openrouter';
+  model: string;
+  reason: 'primary_not_configured' | 'primary_unavailable';
+}
+
 export interface KlocResponse {
-  council_mode: 'five-independent-providers';
+  council_mode: 'five-independent-providers' | 'five-models-with-backup-subseats';
+  fallback_events?: FallbackEvent[];
   reviewers: ReviewerTrace[];
   kloc_version: string;
   proposal_id: string;
