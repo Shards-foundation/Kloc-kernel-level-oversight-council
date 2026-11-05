@@ -129,6 +129,13 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({ data, onChange, onSu
 
       </div>
 
+      <div className="mt-8 rounded-lg border border-amber-500/30 bg-amber-950/20 p-4 text-xs text-zinc-300">
+        <strong className="text-amber-300">Five-provider disclosure:</strong> Submitting sends this proposal independently
+        to Anthropic, OpenAI, Google, xAI and Mistral. Each provider may charge for tokens and handle data according
+        to its own terms. Do not submit private keys, passwords, personal information or confidential data without
+        appropriate authorisation. KLOC never gives its reviewers execution authority.
+      </div>
+
       <div className="mt-8 flex justify-end">
         <button
           onClick={onSubmit}
