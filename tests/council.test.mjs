@@ -81,3 +81,10 @@ test('invalid model response fails closed rather than pretending success', () =>
   assert.throws(() => normalizeCouncilResult({ seats: [] }, proposal));
   assert.throws(() => normalizeCouncilResult(null, proposal));
 });
+
+test('model cannot pass an unresolved unknown as NO_OBJECTION', () => {
+  const data = raw([]);
+  data.seats[0].unknowns = ['Unverified privileged API access'];
+  const result = normalizeCouncilResult(data, proposal);
+  assert.equal(result.kernel_resolution.final_state, 'MANUAL_REVIEW');
+});
