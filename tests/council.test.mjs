@@ -88,3 +88,17 @@ test('model cannot pass an unresolved unknown as NO_OBJECTION', () => {
   const result = normalizeCouncilResult(data, proposal);
   assert.equal(result.kernel_resolution.final_state, 'MANUAL_REVIEW');
 });
+
+test('unknowns attached to SOFT_REJECT cannot proceed', () => {
+  const data = raw(['SOFT_REJECT']);
+  data.seats[0].unknowns = ['Vendor policy unverified'];
+  const result = normalizeCouncilResult(data, proposal);
+  assert.equal(result.kernel_resolution.final_state, 'MANUAL_REVIEW');
+  assert.match(result.kernel_resolution.manual_review_questions[0], /Vendor policy/);
+});
+
+test('unknown user fields are not copied into validated proposal', () => {
+  const data = Object.assign({}, proposal, { rogue: 'untrusted side channel' });
+  const validated = validateProposal(data);
+  assert.equal(Object.hasOwn(validated, 'rogue'), false);
+});
