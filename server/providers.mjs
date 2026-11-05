@@ -186,6 +186,37 @@ function coveragePossible(missingSeats, candidates, occupiedModels) {
     coveragePossible(remaining, candidates, new Set([...occupiedModels, candidate.model])));
 }
 
+// Find a complete injective assignment of distinct model IDs to all failed
+// seats. A locally greedy pick can consume the only model available to another
+// seat. Minimum-remaining-values first and backtracking prevent false failures.
+function planBackupAssignment(failedOutcomes, backups, occupiedModels, occupiedProviders, excluded) {
+  const choices = failedOutcomes.map(original => ({
+    original,
+    candidates: backups.filter(candidate =>
+      candidate.seat === original.config.seat &&
+      !occupiedModels.has(candidate.model) &&
+      !excluded.has(candidate.seat + '|' + candidate.provider + '|' + candidate.model)
+    )
+  })).sort((a, b) => a.candidates.length - b.candidates.length);
+
+  function assign(index, models, providers) {
+    if (index === choices.length) return [];
+    const { original, candidates } = choices[index];
+    const ordered = candidates.filter(candidate => !models.has(candidate.model)).sort((a, b) =>
+      Number(providers.has(a.provider)) - Number(providers.has(b.provider)) ||
+      a.priority - b.priority
+    );
+    for (const candidate of ordered) {
+      const rest = assign(index + 1,
+        new Set([...models, candidate.model]),
+        new Set([...providers, candidate.provider]));
+      if (rest) return [{ original, candidate }, ...rest];
+    }
+    return null;
+  }
+  return assign(0, occupiedModels, occupiedProviders);
+}
+
 export async function runIndependentCouncil(input, options = {}) {
   const proposal = validateProposal(input);
   const env = options.env || process.env;
@@ -226,44 +257,40 @@ export async function runIndependentCouncil(input, options = {}) {
     [...acceptedBySeat.values()].map(item => item.metadata.provider)
   );
   const fallbackEvents = [];
-  const failedSeats = [];
+  const pending = new Map(outcomes.filter(item => !item.ok)
+    .map(item => [item.config.seat, item]));
+  const excluded = new Set();
 
-  for (const original of outcomes) {
-    if (original.ok) continue;
-    const config = original.config;
-    // Prefer distinct providers, then configured priority. Every backup is still
-    // one separate inference request and must use a unique model identity.
-    const candidates = backups.filter(backup =>
-      backup.seat === config.seat && !occupiedModels.has(backup.model)
-    ).sort((a, b) =>
-      Number(occupiedProviders.has(a.provider)) - Number(occupiedProviders.has(b.provider)) ||
-      a.priority - b.priority
+  while (pending.size) {
+    const plan = planBackupAssignment(
+      [...pending.values()], backups, occupiedModels, occupiedProviders, excluded
     );
-    let resolved = false;
-    for (const candidate of candidates) {
-      try {
-        const report = await runSubseat(candidate, proposal, options);
-        report.metadata.replaced_provider = config.provider;
-        report.metadata.backup_reason = original.reason;
-        acceptedBySeat.set(config.seat, report);
-        occupiedModels.add(candidate.model);
-        occupiedProviders.add(candidate.provider);
-        fallbackEvents.push({
-          seat: config.seat,
-          replaced_provider: config.provider,
-          provider: candidate.provider,
-          model: candidate.model,
-          reason: original.reason
-        });
-        resolved = true;
-        break;
-      } catch {
-        // A failed backup never becomes a fabricated vote. Try the next explicit
-        // backup candidate for this seat, if one exists.
-      }
+    if (!plan || !plan.length) break;
+
+    // Execute the most constrained seat first. If this candidate fails,
+    // exclude it and recompute the complete remaining assignment.
+    const { original, candidate } = plan[0];
+    const config = original.config;
+    try {
+      const report = await runSubseat(candidate, proposal, options);
+      report.metadata.replaced_provider = config.provider;
+      report.metadata.backup_reason = original.reason;
+      acceptedBySeat.set(config.seat, report);
+      occupiedModels.add(candidate.model);
+      occupiedProviders.add(candidate.provider);
+      fallbackEvents.push({
+        seat: config.seat,
+        replaced_provider: config.provider,
+        provider: candidate.provider,
+        model: candidate.model,
+        reason: original.reason
+      });
+      pending.delete(config.seat);
+    } catch {
+      excluded.add(candidate.seat + '|' + candidate.provider + '|' + candidate.model);
     }
-    if (!resolved) failedSeats.push(config.seat);
   }
+  const failedSeats = [...pending.keys()];
 
   const accepted = SEATS.map(seat => acceptedBySeat.get(seat));
   if (failedSeats.length || accepted.some(item => !item)) {
