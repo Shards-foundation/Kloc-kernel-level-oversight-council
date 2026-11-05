@@ -29,7 +29,18 @@ export interface OperatorNotes {
   recommended_next_action: string;
 }
 
+export interface ReviewerTrace {
+  seat: SeatName;
+  provider: 'anthropic' | 'openai' | 'google' | 'xai' | 'mistral';
+  model: string;
+  latency_ms: number;
+  input_tokens?: number;
+  output_tokens?: number;
+}
+
 export interface KlocResponse {
+  council_mode: 'five-independent-providers';
+  reviewers: ReviewerTrace[];
   kloc_version: string;
   proposal_id: string;
   proposal_summary_1line: string;
