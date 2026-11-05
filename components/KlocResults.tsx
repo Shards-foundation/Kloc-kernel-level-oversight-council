@@ -74,10 +74,14 @@ export const KlocResults: React.FC<KlocResultsProps> = ({ response, onReset }) =
         </div>
       </div>
 
+      <div className="rounded-lg border border-blue-500/20 bg-zinc-900/60 p-4 text-xs font-mono text-zinc-400">
+        COUNCIL MODE: FIVE INDEPENDENT PROVIDERS · 5/5 REVIEWERS REQUIRED · NO MODEL VOTE SUBSTITUTION
+      </div>
+
       {/* Seats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
         {response.seats.map((seat, idx) => (
-          <SeatCard key={idx} seatData={seat} />
+          <SeatCard key={seat.seat} seatData={seat} reviewer={response.reviewers.find(r => r.seat === seat.seat)} />
         ))}
       </div>
 

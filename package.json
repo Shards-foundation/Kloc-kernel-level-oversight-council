@@ -1,9 +1,9 @@
 {
   "name": "kloc-oversight-council",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
-  "description": "KLOC adversarial proposal council with deterministic fail-closed resolution",
+  "description": "KLOC five independent AI reviewers with deterministic council resolution",
   "scripts": {
     "dev": "concurrently --kill-others \"node server/index.mjs\" \"vite --host 127.0.0.1\"",
     "build": "tsc --noEmit && vite build",
@@ -20,7 +20,6 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@google/genai": "^1.33.0",
     "dotenv": "^16.6.0",
     "lucide-react": "^0.561.0",
     "react": "^19.2.0",

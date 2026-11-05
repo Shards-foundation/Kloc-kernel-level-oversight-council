@@ -1,9 +1,10 @@
 import React from 'react';
-import { SeatResult, Verdict } from '../types';
+import { SeatResult, Verdict, ReviewerTrace } from '../types';
 import { Shield, Activity, DollarSign, UserMinus, Globe, AlertTriangle, CheckCircle, XCircle, AlertOctagon } from 'lucide-react';
 
 interface SeatCardProps {
   seatData: SeatResult;
+  reviewer?: ReviewerTrace;
 }
 
 const getVerdictColor = (verdict: Verdict) => {
@@ -36,7 +37,7 @@ const getSeatIcon = (seat: string) => {
   }
 };
 
-export const SeatCard: React.FC<SeatCardProps> = ({ seatData }) => {
+export const SeatCard: React.FC<SeatCardProps> = ({ seatData, reviewer }) => {
   const colorClass = getVerdictColor(seatData.verdict);
 
   return (
@@ -51,6 +52,18 @@ export const SeatCard: React.FC<SeatCardProps> = ({ seatData }) => {
           <span>{seatData.verdict}</span>
         </div>
       </div>
+
+      {reviewer && (
+        <div className="rounded border border-white/10 bg-black/30 px-3 py-2 font-mono text-[11px] text-zinc-300">
+          <div className="uppercase tracking-wide text-zinc-500 mb-1">Independent reviewer</div>
+          <div className="font-semibold break-all">{reviewer.provider.toUpperCase()} · {reviewer.model}</div>
+          <div className="mt-1 text-zinc-500">
+            {Math.round(reviewer.latency_ms)}ms
+            {reviewer.input_tokens !== undefined && ` · ${reviewer.input_tokens} input tokens`}
+            {reviewer.output_tokens !== undefined && ` · ${reviewer.output_tokens} output tokens`}
+          </div>
+        </div>
+      )}
 
       <div className="flex justify-between text-xs font-mono opacity-80">
         <span>RISK: {seatData.risk_score}/10</span>
