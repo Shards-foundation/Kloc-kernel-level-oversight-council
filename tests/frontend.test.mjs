@@ -60,3 +60,42 @@ test('untrusted seat verdicts and resolution metadata fail closed in UI', () => 
   const d = report(); d.seats.pop();
   assert.equal(isKlocResponseShape(d), false);
 });
+
+
+test('fallback metadata is accepted only when correctly linked and degraded', () => {
+  const r = report();
+  r.council_mode = 'five-models-with-backup-subseats';
+  r.reviewers[0] = {
+    seat: 'SECURITY', provider: 'ollama', model: 'qwen3:8b',
+    tier: 'subseat', replaced_provider: 'anthropic',
+    backup_reason: 'primary_unavailable', latency_ms: 120
+  };
+  r.fallback_events = [{
+    seat: 'SECURITY', replaced_provider: 'anthropic', provider: 'ollama',
+    model: 'qwen3:8b', reason: 'primary_unavailable'
+  }];
+  r.kernel_resolution.final_state = 'MANUAL_REVIEW';
+  r.kernel_resolution.rule_trace.push('DEGRADED COUNCIL: 1 backup sub-seat(s); human review mandatory');
+  assert.equal(isKlocResponseShape(r), true);
+
+  const spoofed = structuredClone(r);
+  spoofed.reviewers[0].replaced_provider = 'xai';
+  assert.equal(isKlocResponseShape(spoofed), false);
+
+  const absent = structuredClone(r);
+  absent.fallback_events = [];
+  assert.equal(isKlocResponseShape(absent), false);
+
+  const silent = structuredClone(r);
+  silent.kernel_resolution.final_state = 'PROCEED';
+  assert.equal(isKlocResponseShape(silent), false);
+
+  const inconsistent = structuredClone(r);
+  inconsistent.council_mode = 'five-independent-providers';
+  assert.equal(isKlocResponseShape(inconsistent), false);
+
+  const duplicate = structuredClone(r);
+  duplicate.reviewers[0].model = duplicate.reviewers[1].model;
+  duplicate.fallback_events[0].model = duplicate.reviewers[1].model;
+  assert.equal(isKlocResponseShape(duplicate), false);
+});
