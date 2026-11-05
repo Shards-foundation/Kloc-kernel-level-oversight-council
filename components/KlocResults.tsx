@@ -1,6 +1,7 @@
 import React from 'react';
 import { KlocResponse, FinalState } from '../types';
 import { SeatCard } from './SeatCard';
+import { councilPresentation } from '../services/council-presentation.mjs';
 import { AlertOctagon, CheckCircle, PauseCircle, ShieldBan, Terminal } from 'lucide-react';
 
 interface KlocResultsProps {
@@ -43,6 +44,7 @@ const getFinalStateDetails = (state: FinalState) => {
 
 export const KlocResults: React.FC<KlocResultsProps> = ({ response, onReset }) => {
   const status = getFinalStateDetails(response.kernel_resolution.final_state);
+  const presentation = councilPresentation(response);
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -74,8 +76,13 @@ export const KlocResults: React.FC<KlocResultsProps> = ({ response, onReset }) =
         </div>
       </div>
 
-      <div className="rounded-lg border border-blue-500/20 bg-zinc-900/60 p-4 text-xs font-mono text-zinc-400">
-        COUNCIL MODE: FIVE INDEPENDENT PROVIDERS · 5/5 REVIEWERS REQUIRED · NO MODEL VOTE SUBSTITUTION
+      <div className={`rounded-lg border p-4 text-xs font-mono ${presentation.degraded
+        ? 'border-amber-500/40 bg-amber-950/20 text-amber-200'
+        : 'border-blue-500/20 bg-zinc-900/60 text-zinc-400'}`}>
+        {presentation.label}
+        {presentation.replacements.map(item => (
+          <div key={item.seat} className="mt-2 text-zinc-300">{item.label}</div>
+        ))}
       </div>
 
       {/* Seats Grid */}

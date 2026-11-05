@@ -133,7 +133,10 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({ data, onChange, onSu
         <strong className="text-amber-300">Five-provider disclosure:</strong> Submitting sends this proposal independently
         to Anthropic, OpenAI, Google, xAI and Mistral. Each provider may charge for tokens and handle data according
         to its own terms. Do not submit private keys, passwords, personal information or confidential data without
-        appropriate authorisation. KLOC never gives its reviewers execution authority.
+        appropriate authorisation. When backup sub-seats are explicitly enabled, a failed primary may
+        route the same proposal to a local Ollama / LM Studio model or an OpenRouter free-tier model.
+        Local models run on the KLOC server machine; OpenRouter is an additional external data recipient.
+        KLOC never gives any reviewer execution authority.
       </div>
 
       <div className="mt-8 flex justify-end">

@@ -55,7 +55,12 @@ export const SeatCard: React.FC<SeatCardProps> = ({ seatData, reviewer }) => {
 
       {reviewer && (
         <div className="rounded border border-white/10 bg-black/30 px-3 py-2 font-mono text-[11px] text-zinc-300">
-          <div className="uppercase tracking-wide text-zinc-500 mb-1">Independent reviewer</div>
+          <div className={`uppercase tracking-wide mb-1 ${reviewer.tier === 'subseat' ? 'text-amber-400' : 'text-zinc-500'}`}>
+            {reviewer.tier === 'subseat' ? 'BACKUP SUB-SEAT · DEGRADED' : 'Independent primary reviewer'}
+          </div>
+          {reviewer.tier === 'subseat' && (
+            <div className="text-amber-300 mb-1">Replacing {reviewer.replaced_provider?.toUpperCase()}</div>
+          )}
           <div className="font-semibold break-all">{reviewer.provider.toUpperCase()} · {reviewer.model}</div>
           <div className="mt-1 text-zinc-500">
             {Math.round(reviewer.latency_ms)}ms

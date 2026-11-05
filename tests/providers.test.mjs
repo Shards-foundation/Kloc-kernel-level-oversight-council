@@ -80,7 +80,7 @@ test('calls five separate APIs and no provider sees other provider reviews', asy
   assert.equal(result.reviewers.length, 5);
   assert.equal(result.seats.length, 5);
   assert.equal(result.kernel_resolution.final_state, 'BLOCK');
-  assert.equal(result.kloc_version, '1.2');
+  assert.equal(result.kloc_version, '1.3');
   assert.deepEqual(result.reviewers.map(r => r.seat), config.map(r => r.seat));
   assert.deepEqual(result.reviewers.map(r => r.provider), config.map(r => r.provider));
   assert.ok(result.reviewers.every(r => r.input_tokens === 128 && r.output_tokens === 80));

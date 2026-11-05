@@ -1,6 +1,7 @@
 // Five distinct provider integrations. No shared inference proxy, no fallback model.
-import { SEATS, normalizeCouncilResult, validateProposal } from './council.mjs';
+import { SEATS, normalizeCouncilResult, validateProposal, verifySingleSeat } from './council.mjs';
 import { seatPrompt } from './prompt.mjs';
+import { loadSubseats, runSubseat } from './subseats.mjs';
 
 const DEFAULTS = Object.freeze([
   { seat: 'SECURITY', provider: 'anthropic', key: 'ANTHROPIC_API_KEY', modelKey: 'KLOC_ANTHROPIC_MODEL', model: 'claude-sonnet-5-5' },
@@ -20,7 +21,7 @@ export function reviewerConfiguration(env = process.env) {
   }));
 }
 
-function assertConfiguration(config) {
+function assertConfiguration(config, { requireCredentials = true } = {}) {
   if (!Array.isArray(config) || config.length !== SEATS.length) {
     throw Object.assign(new Error('Exactly five reviewers are required'), { status: 503 });
   }
@@ -36,7 +37,7 @@ function assertConfiguration(config) {
     throw Object.assign(new Error('Five unique seats, providers and models with correct provider ownership are required'), { status: 503 });
   }
   const missing = config.filter(x => !x.credential || x.credential.startsWith('replace-with-'));
-  if (missing.length) {
+  if (requireCredentials && missing.length) {
     throw Object.assign(new Error('Required providers not configured: ' + missing.map(x => x.provider).join(', ')), { status: 503 });
   }
   if (config.some(x => !x.model || !/^[a-zA-Z0-9._-]{2,128}$/.test(x.model))) {
@@ -160,8 +161,11 @@ export async function runReviewer(config, proposal, { fetchFn = fetch, timeoutMs
   if (!seat || Array.isArray(seat) || typeof seat !== 'object' || seat.seat !== config.seat) {
     throw new TypeError(config.seat + ': reviewer identity mismatch');
   }
+  // Validate each primary before considering it successful; an incomplete
+  // model report is a failed reviewer and can trigger an explicit sub-seat.
+  const verifiedSeat = verifySingleSeat(seat, config.seat);
   return {
-    seat,
+    seat: verifiedSeat,
     metadata: {
       seat: config.seat, provider: config.provider, model: config.model,
       latency_ms: Math.max(0, now() - started),
@@ -170,36 +174,168 @@ export async function runReviewer(config, proposal, { fetchFn = fetch, timeoutMs
   };
 }
 
+function hasCredential(config) {
+  return Boolean(config.credential && !config.credential.startsWith('replace-with-'));
+}
+
+function coveragePossible(missingSeats, candidates, occupiedModels) {
+  if (!missingSeats.length) return true;
+  const [seat, ...remaining] = missingSeats;
+  return candidates.some(candidate =>
+    candidate.seat === seat && !occupiedModels.has(candidate.model) &&
+    coveragePossible(remaining, candidates, new Set([...occupiedModels, candidate.model])));
+}
+
+// Find a complete injective assignment of distinct model IDs to all failed
+// seats. A locally greedy pick can consume the only model available to another
+// seat. Minimum-remaining-values first and backtracking prevent false failures.
+function planBackupAssignment(failedOutcomes, backups, occupiedModels, occupiedProviders, excluded) {
+  const choices = failedOutcomes.map(original => ({
+    original,
+    candidates: backups.filter(candidate =>
+      candidate.seat === original.config.seat &&
+      !occupiedModels.has(candidate.model) &&
+      !excluded.has(candidate.seat + '|' + candidate.provider + '|' + candidate.model)
+    )
+  })).sort((a, b) => a.candidates.length - b.candidates.length);
+
+  function assign(index, models, providers) {
+    if (index === choices.length) return [];
+    const { original, candidates } = choices[index];
+    const ordered = candidates.filter(candidate => !models.has(candidate.model)).sort((a, b) =>
+      Number(providers.has(a.provider)) - Number(providers.has(b.provider)) ||
+      a.priority - b.priority
+    );
+    for (const candidate of ordered) {
+      const rest = assign(index + 1,
+        new Set([...models, candidate.model]),
+        new Set([...providers, candidate.provider]));
+      if (rest) return [{ original, candidate }, ...rest];
+    }
+    return null;
+  }
+  return assign(0, occupiedModels, occupiedProviders);
+}
+
 export async function runIndependentCouncil(input, options = {}) {
   const proposal = validateProposal(input);
-  // Validate ALL providers and credentials before spending money on any one request.
-  const configs = assertConfiguration(options.config || reviewerConfiguration(options.env || process.env));
-  // Each result carries its own trusted seat identity: never index into config from a model response.
+  const env = options.env || process.env;
+  // All sub-seats are opt-in. With disabled backups, the strict v1.2 behaviour is unchanged.
+  const backups = options.backups || loadSubseats(env);
+  const configs = assertConfiguration(
+    options.config || reviewerConfiguration(env),
+    { requireCredentials: backups.length === 0 }
+  );
+  const missingCredentials = configs.filter(config => !hasCredential(config));
+  const initialModels = new Set(configs.filter(hasCredential).map(config => config.model));
+  if (missingCredentials.length &&
+      !coveragePossible(missingCredentials.map(config => config.seat), backups, initialModels)) {
+    throw Object.assign(new Error('No complete five-model council configuration: some primary seats have no distinct configured backup'), { status: 503 });
+  }
+
   const outcomes = await Promise.all(configs.map(async config => {
+    if (!hasCredential(config)) return {
+      config, ok: false, reason: 'primary_not_configured'
+    };
     try {
-      return { ok: true, report: await runReviewer(config, proposal, options) };
+      const report = await runReviewer(config, proposal, options);
+      return { config, ok: true, report };
     } catch {
-      return { ok: false, failedSeat: config.seat };
+      return { config, ok: false, reason: 'primary_unavailable' };
     }
   }));
-  const failed = outcomes.filter(item => !item.ok).map(item => item.failedSeat);
-  if (failed.length) {
-    // No substitution, no consensus from fewer than five responses.
+
+  // Key accepted reviews by the validated, trusted seat identity, not by an
+  // array position that might drift when provider calls fail.
+  const acceptedBySeat = new Map(
+    outcomes.filter(item => item.ok).map(item => [item.config.seat, item.report])
+  );
+  const occupiedModels = new Set(
+    [...acceptedBySeat.values()].map(item => item.metadata.model)
+  );
+  const occupiedProviders = new Set(
+    [...acceptedBySeat.values()].map(item => item.metadata.provider)
+  );
+  const fallbackEvents = [];
+  const pending = new Map(outcomes.filter(item => !item.ok)
+    .map(item => [item.config.seat, item]));
+  const excluded = new Set();
+
+  while (pending.size) {
+    const plan = planBackupAssignment(
+      [...pending.values()], backups, occupiedModels, occupiedProviders, excluded
+    );
+    if (!plan || !plan.length) break;
+
+    // Execute the most constrained seat first. If this candidate fails,
+    // exclude it and recompute the complete remaining assignment.
+    const { original, candidate } = plan[0];
+    const config = original.config;
+    try {
+      const report = await runSubseat(candidate, proposal, options);
+      report.metadata.replaced_provider = config.provider;
+      report.metadata.backup_reason = original.reason;
+      acceptedBySeat.set(config.seat, report);
+      occupiedModels.add(candidate.model);
+      occupiedProviders.add(candidate.provider);
+      fallbackEvents.push({
+        seat: config.seat,
+        replaced_provider: config.provider,
+        provider: candidate.provider,
+        model: candidate.model,
+        reason: original.reason
+      });
+      pending.delete(config.seat);
+    } catch {
+      excluded.add(candidate.seat + '|' + candidate.provider + '|' + candidate.model);
+    }
+  }
+  const failedSeats = [...pending.keys()];
+
+  const accepted = SEATS.map(seat => acceptedBySeat.get(seat));
+  if (failedSeats.length || accepted.some(item => !item)) {
     throw Object.assign(
-      new Error('Independent council incomplete; no decision issued. Failed seats: ' + failed.join(', ')),
+      new Error('Independent council incomplete; no decision issued. Failed seats: ' + failedSeats.join(', ')),
       { status: 502 }
     );
   }
-  const accepted = outcomes.map(item => item.report);
+  const finalModels = accepted.map(item => item.metadata.model);
+  if (new Set(finalModels).size !== SEATS.length) {
+    throw Object.assign(new Error('Independent council model duplication; no decision issued'), { status: 502 });
+  }
+
   const normalized = normalizeCouncilResult({
     proposal_summary_1line: proposal.title,
-    seats: accepted.map(x => x.seat),
-    operator_notes: { recommended_next_action: 'Review each independent report and implement the required mitigations.' }
+    seats: accepted.map(item => item.seat),
+    operator_notes: {
+      recommended_next_action: 'Review every seat report, model provenance and required mitigation before acting.'
+    }
   }, proposal);
+
+  if (fallbackEvents.length) {
+    // Backup votes are useful continuity evidence, not equivalent to a complete
+    // primary five-provider review. Never silently clear a consequential proposal.
+    if (normalized.kernel_resolution.final_state !== 'BLOCK') {
+      normalized.kernel_resolution.final_state = 'MANUAL_REVIEW';
+    }
+    normalized.kernel_resolution.rule_trace.push(
+      'DEGRADED COUNCIL: ' + fallbackEvents.length + ' backup sub-seat(s); human review mandatory'
+    );
+    normalized.kernel_resolution.manual_review_questions.push(
+      ...fallbackEvents.map(event =>
+        event.seat + ': ' + event.replaced_provider + ' replaced by ' +
+        event.provider + ' (' + event.model + ') — verify review quality')
+    );
+  }
   return {
     ...normalized,
-    kloc_version: '1.2',
-    reviewers: accepted.map(x => x.metadata),
-    council_mode: 'five-independent-providers'
+    kloc_version: '1.3',
+    reviewers: accepted.map(item => ({
+      tier: 'primary', ...item.metadata
+    })),
+    fallback_events: fallbackEvents,
+    council_mode: fallbackEvents.length
+      ? 'five-models-with-backup-subseats'
+      : 'five-independent-providers'
   };
 }
