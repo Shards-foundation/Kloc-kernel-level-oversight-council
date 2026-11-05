@@ -204,25 +204,33 @@ export async function runIndependentCouncil(input, options = {}) {
 
   const outcomes = await Promise.all(configs.map(async config => {
     if (!hasCredential(config)) return {
-      ok: false, failedSeat: config.seat, reason: 'primary_not_configured'
+      config, ok: false, reason: 'primary_not_configured'
     };
     try {
       const report = await runReviewer(config, proposal, options);
-      return { ok: true, report };
+      return { config, ok: true, report };
     } catch {
-      return { ok: false, failedSeat: config.seat, reason: 'primary_unavailable' };
+      return { config, ok: false, reason: 'primary_unavailable' };
     }
   }));
 
-  const accepted = outcomes.map(item => item.ok ? item.report : null);
-  const occupiedModels = new Set(accepted.filter(Boolean).map(item => item.metadata.model));
-  const occupiedProviders = new Set(accepted.filter(Boolean).map(item => item.metadata.provider));
+  // Key accepted reviews by the validated, trusted seat identity, not by an
+  // array position that might drift when provider calls fail.
+  const acceptedBySeat = new Map(
+    outcomes.filter(item => item.ok).map(item => [item.config.seat, item.report])
+  );
+  const occupiedModels = new Set(
+    [...acceptedBySeat.values()].map(item => item.metadata.model)
+  );
+  const occupiedProviders = new Set(
+    [...acceptedBySeat.values()].map(item => item.metadata.provider)
+  );
   const fallbackEvents = [];
   const failedSeats = [];
 
-  for (const [index, original] of outcomes.entries()) {
+  for (const original of outcomes) {
     if (original.ok) continue;
-    const config = configs[index];
+    const config = original.config;
     // Prefer distinct providers, then configured priority. Every backup is still
     // one separate inference request and must use a unique model identity.
     const candidates = backups.filter(backup =>
@@ -237,7 +245,7 @@ export async function runIndependentCouncil(input, options = {}) {
         const report = await runSubseat(candidate, proposal, options);
         report.metadata.replaced_provider = config.provider;
         report.metadata.backup_reason = original.reason;
-        accepted[index] = report;
+        acceptedBySeat.set(config.seat, report);
         occupiedModels.add(candidate.model);
         occupiedProviders.add(candidate.provider);
         fallbackEvents.push({
@@ -257,6 +265,7 @@ export async function runIndependentCouncil(input, options = {}) {
     if (!resolved) failedSeats.push(config.seat);
   }
 
+  const accepted = SEATS.map(seat => acceptedBySeat.get(seat));
   if (failedSeats.length || accepted.some(item => !item)) {
     throw Object.assign(
       new Error('Independent council incomplete; no decision issued. Failed seats: ' + failedSeats.join(', ')),
