@@ -1,5 +1,5 @@
 {
-  "name": "KLOC v1.0 - Oversight Council",
-  "description": "Kernel-Level Oversight Council (KLOC) is a forced disagreement engine designed to stress-test proposals using AI. It simulates 5 independent seats to generate structured objections.",
+  "name": "KLOC v1.2 - Five Independent Reviewers",
+  "description": "Five provider-isolated AI reviewers for the KLOC council, with strict quorum and deterministic advisory resolution.",
   "requestFramePermissions": []
 }
