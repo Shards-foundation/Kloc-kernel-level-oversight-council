@@ -1,6 +1,7 @@
 // Five distinct provider integrations. No shared inference proxy, no fallback model.
 import { SEATS, normalizeCouncilResult, validateProposal } from './council.mjs';
 import { seatPrompt } from './prompt.mjs';
+import { loadSubseats, runSubseat } from './subseats.mjs';
 
 const DEFAULTS = Object.freeze([
   { seat: 'SECURITY', provider: 'anthropic', key: 'ANTHROPIC_API_KEY', modelKey: 'KLOC_ANTHROPIC_MODEL', model: 'claude-sonnet-5-5' },
@@ -20,7 +21,7 @@ export function reviewerConfiguration(env = process.env) {
   }));
 }
 
-function assertConfiguration(config) {
+function assertConfiguration(config, { requireCredentials = true } = {}) {
   if (!Array.isArray(config) || config.length !== SEATS.length) {
     throw Object.assign(new Error('Exactly five reviewers are required'), { status: 503 });
   }
@@ -36,7 +37,7 @@ function assertConfiguration(config) {
     throw Object.assign(new Error('Five unique seats, providers and models with correct provider ownership are required'), { status: 503 });
   }
   const missing = config.filter(x => !x.credential || x.credential.startsWith('replace-with-'));
-  if (missing.length) {
+  if (requireCredentials && missing.length) {
     throw Object.assign(new Error('Required providers not configured: ' + missing.map(x => x.provider).join(', ')), { status: 503 });
   }
   if (config.some(x => !x.model || !/^[a-zA-Z0-9._-]{2,128}$/.test(x.model))) {
@@ -170,36 +171,132 @@ export async function runReviewer(config, proposal, { fetchFn = fetch, timeoutMs
   };
 }
 
+function hasCredential(config) {
+  return Boolean(config.credential && !config.credential.startsWith('replace-with-'));
+}
+
+function coveragePossible(missingSeats, candidates, occupiedModels) {
+  if (!missingSeats.length) return true;
+  const [seat, ...remaining] = missingSeats;
+  return candidates.some(candidate =>
+    candidate.seat === seat && !occupiedModels.has(candidate.model) &&
+    coveragePossible(remaining, candidates, new Set([...occupiedModels, candidate.model])));
+}
+
 export async function runIndependentCouncil(input, options = {}) {
   const proposal = validateProposal(input);
-  // Validate ALL providers and credentials before spending money on any one request.
-  const configs = assertConfiguration(options.config || reviewerConfiguration(options.env || process.env));
-  // Each result carries its own trusted seat identity: never index into config from a model response.
+  const env = options.env || process.env;
+  // All sub-seats are opt-in. With disabled backups, the strict v1.2 behaviour is unchanged.
+  const backups = options.backups || loadSubseats(env);
+  const configs = assertConfiguration(
+    options.config || reviewerConfiguration(env),
+    { requireCredentials: backups.length === 0 }
+  );
+  const missingCredentials = configs.filter(config => !hasCredential(config));
+  const initialModels = new Set(configs.filter(hasCredential).map(config => config.model));
+  if (missingCredentials.length &&
+      !coveragePossible(missingCredentials.map(config => config.seat), backups, initialModels)) {
+    throw Object.assign(new Error('No complete five-model council configuration: some primary seats have no distinct configured backup'), { status: 503 });
+  }
+
   const outcomes = await Promise.all(configs.map(async config => {
+    if (!hasCredential(config)) return {
+      ok: false, failedSeat: config.seat, reason: 'primary_not_configured'
+    };
     try {
-      return { ok: true, report: await runReviewer(config, proposal, options) };
+      const report = await runReviewer(config, proposal, options);
+      return { ok: true, report };
     } catch {
-      return { ok: false, failedSeat: config.seat };
+      return { ok: false, failedSeat: config.seat, reason: 'primary_unavailable' };
     }
   }));
-  const failed = outcomes.filter(item => !item.ok).map(item => item.failedSeat);
-  if (failed.length) {
-    // No substitution, no consensus from fewer than five responses.
+
+  const accepted = outcomes.map(item => item.ok ? item.report : null);
+  const occupiedModels = new Set(accepted.filter(Boolean).map(item => item.metadata.model));
+  const occupiedProviders = new Set(accepted.filter(Boolean).map(item => item.metadata.provider));
+  const fallbackEvents = [];
+  const failedSeats = [];
+
+  for (const [index, original] of outcomes.entries()) {
+    if (original.ok) continue;
+    const config = configs[index];
+    // Prefer distinct providers, then configured priority. Every backup is still
+    // one separate inference request and must use a unique model identity.
+    const candidates = backups.filter(backup =>
+      backup.seat === config.seat && !occupiedModels.has(backup.model)
+    ).sort((a, b) =>
+      Number(occupiedProviders.has(a.provider)) - Number(occupiedProviders.has(b.provider)) ||
+      a.priority - b.priority
+    );
+    let resolved = false;
+    for (const candidate of candidates) {
+      try {
+        const report = await runSubseat(candidate, proposal, options);
+        report.metadata.replaced_provider = config.provider;
+        report.metadata.backup_reason = original.reason;
+        accepted[index] = report;
+        occupiedModels.add(candidate.model);
+        occupiedProviders.add(candidate.provider);
+        fallbackEvents.push({
+          seat: config.seat,
+          replaced_provider: config.provider,
+          provider: candidate.provider,
+          model: candidate.model,
+          reason: original.reason
+        });
+        resolved = true;
+        break;
+      } catch {
+        // A failed backup never becomes a fabricated vote. Try the next explicit
+        // backup candidate for this seat, if one exists.
+      }
+    }
+    if (!resolved) failedSeats.push(config.seat);
+  }
+
+  if (failedSeats.length || accepted.some(item => !item)) {
     throw Object.assign(
-      new Error('Independent council incomplete; no decision issued. Failed seats: ' + failed.join(', ')),
+      new Error('Independent council incomplete; no decision issued. Failed seats: ' + failedSeats.join(', ')),
       { status: 502 }
     );
   }
-  const accepted = outcomes.map(item => item.report);
+  const finalModels = accepted.map(item => item.metadata.model);
+  if (new Set(finalModels).size !== SEATS.length) {
+    throw Object.assign(new Error('Independent council model duplication; no decision issued'), { status: 502 });
+  }
+
   const normalized = normalizeCouncilResult({
     proposal_summary_1line: proposal.title,
-    seats: accepted.map(x => x.seat),
-    operator_notes: { recommended_next_action: 'Review each independent report and implement the required mitigations.' }
+    seats: accepted.map(item => item.seat),
+    operator_notes: {
+      recommended_next_action: 'Review every seat report, model provenance and required mitigation before acting.'
+    }
   }, proposal);
+
+  if (fallbackEvents.length) {
+    // Backup votes are useful continuity evidence, not equivalent to a complete
+    // primary five-provider review. Never silently clear a consequential proposal.
+    if (normalized.kernel_resolution.final_state !== 'BLOCK') {
+      normalized.kernel_resolution.final_state = 'MANUAL_REVIEW';
+    }
+    normalized.kernel_resolution.rule_trace.push(
+      'DEGRADED COUNCIL: ' + fallbackEvents.length + ' backup sub-seat(s); human review mandatory'
+    );
+    normalized.kernel_resolution.manual_review_questions.push(
+      ...fallbackEvents.map(event =>
+        event.seat + ': ' + event.replaced_provider + ' replaced by ' +
+        event.provider + ' (' + event.model + ') — verify review quality')
+    );
+  }
   return {
     ...normalized,
-    kloc_version: '1.2',
-    reviewers: accepted.map(x => x.metadata),
-    council_mode: 'five-independent-providers'
+    kloc_version: '1.3',
+    reviewers: accepted.map(item => ({
+      tier: 'primary', ...item.metadata
+    })),
+    fallback_events: fallbackEvents,
+    council_mode: fallbackEvents.length
+      ? 'five-models-with-backup-subseats'
+      : 'five-independent-providers'
   };
 }
