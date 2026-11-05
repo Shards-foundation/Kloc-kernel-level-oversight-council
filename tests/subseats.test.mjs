@@ -31,7 +31,7 @@ const withSubseats = (items = backups, overrides = {}) => ({
   ...overrides
 });
 
-function fakeResponses({ failPrimaries = [], badSubseat = '', hardPrimary = '' } = {}) {
+function fakeResponses({ failPrimaries = [], badSubseat = '', hardPrimary = '', malformedPrimary = '' } = {}) {
   const calls = [];
   const config = reviewerConfiguration(KEY_ENV);
   const fetchFn = async (url, req) => {
@@ -40,9 +40,11 @@ function fakeResponses({ failPrimaries = [], badSubseat = '', hardPrimary = '' }
 
     if (url.includes('api.anthropic.com')) {
       if (failPrimaries.includes('anthropic')) return new Response('{}', { status: 503 });
+      const primaryVote = verdict('SECURITY', hardPrimary === 'anthropic' ? 'HARD_REJECT' : 'NO_OBJECTION');
+      if (malformedPrimary === 'anthropic') delete primaryVote.unknowns;
       return Response.json({
         stop_reason: 'end_turn', usage: { input_tokens: 80, output_tokens: 90 },
-        content: [{ type: 'text', text: JSON.stringify(verdict('SECURITY', hardPrimary === 'anthropic' ? 'HARD_REJECT' : 'NO_OBJECTION')) }]
+        content: [{ type: 'text', text: JSON.stringify(primaryVote) }]
       });
     }
     if (url.includes('api.openai.com')) {
@@ -215,4 +217,16 @@ test('direct sub-seat adapter validates provider-declared model and one reviewer
   assert.equal(result.metadata.provider, 'lmstudio');
   assert.equal(result.seat.seat, 'SYSTEMS_INTEGRITY');
   assert.equal(result.metadata.input_tokens, 15);
+});
+
+
+test('schema-invalid primary vote is treated as failure and replaced by valid local sub-seat', async () => {
+  const mocked = fakeResponses({ malformedPrimary: 'anthropic' });
+  const result = await runIndependentCouncil(proposal, {
+    env: withSubseats(), fetchFn: mocked.fetchFn
+  });
+  assert.equal(result.fallback_events.length, 1);
+  assert.equal(result.fallback_events[0].seat, 'SECURITY');
+  assert.equal(result.kernel_resolution.final_state, 'MANUAL_REVIEW');
+  assert.equal(mocked.calls.filter(c => c.url.includes('127.0.0.1:11434')).length, 1);
 });
