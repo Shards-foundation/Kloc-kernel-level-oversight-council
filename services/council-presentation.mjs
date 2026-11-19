@@ -1,4 +1,7 @@
-// Pure UI projection for complete vs degraded council results.
+/**
+ * Pure UI projection for complete vs degraded council results.
+ * @param {Pick<import('../types').KlocResponse, 'fallback_events'>} response
+ */
 export function councilPresentation(response) {
   const events = Array.isArray(response?.fallback_events) ? response.fallback_events : [];
   return {
